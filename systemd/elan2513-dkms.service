@@ -1,0 +1,13 @@
+[Unit]
+Description=ELAN2513 touchscreen, DKMS/MOK-backed no-overlay startup
+ConditionKernelCommandLine=!elan2513.fix=1
+After=systemd-udev-trigger.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=60
+ExecStart=/usr/local/sbin/elan2513-dkms-start
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
