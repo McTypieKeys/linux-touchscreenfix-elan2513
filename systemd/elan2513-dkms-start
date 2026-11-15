@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Standard-boot service. No ACPI initrd overlay or custom GRUB entry is used.
+set -Eeuo pipefail
+KVER=$(uname -r)
+DEV=/sys/bus/i2c/devices/i2c-ELAN2513:00
+ACPI=/sys/bus/acpi/devices/ELAN2513:00
+PTPL=/sys/bus/acpi/devices/LNXPOWER:06
+DRIVER=/sys/bus/i2c/drivers/i2c_hid_acpi
+log() { echo "elan2513-dkms-start: $*"; }
+
+if grep -q 'elan2513.fix=1' /proc/cmdline; then
+    log 'Old custom GRUB entry is running; not interfering.'
+    exit 0
+fi
+
+# The ACPI device exists before the i2c_hid_acpi module is loaded.
+# Do not require the driver directory until after modprobe below.
+for n in $(seq 1 80); do
+    [[ -d $DEV ]] && break
+    sleep 0.25
+done
+[[ -d $DEV ]] || { log 'Expected ELAN2513 ACPI/I2C device missing.'; exit 1; }
+
+if [[ -L $DEV/driver ]]; then
+    log 'Touchscreen already attached.'
+    exit 0
+fi
+
+# Avoid accidentally loading stock drivers after an unsuccessful DKMS build.
+for module in i2c_hid i2c_hid_acpi; do
+    loc=$(modinfo -n "$module" 2>/dev/null || true)
+    if [[ $loc != *'/updates/dkms/'* ]]; then
+        log "$module does not resolve to DKMS: $loc"
+        exit 1
+    fi
+done
+
+# Wait for background udev enumeration before editing the ACPI power-state field.
+if command -v udevadm >/dev/null; then
+    udevadm settle --timeout=20 || log 'udev settle timed out; continuing with guarded checks.'
+fi
+log 'Loading signed enumeration-state helper.'
+modprobe elan2513_enum
+log 'Loading patched ACPI I2C HID driver (or using already loaded one).'
+modprobe i2c_hid_acpi
+[[ -d $DRIVER ]] || { log 'I2C HID ACPI driver did not register.'; exit 1; }
+
+if [[ -L $DEV/driver ]]; then
+    log 'Touchscreen attached on first probe.'
+    exit 0
+fi
+
+# Critical guard: a stock i2c-hid module may have been loaded from an old
+# initramfs even though modinfo now resolves to DKMS on disk.
+if ! journalctl -k -b --no-pager | grep -F 'ELAN2513: skipping SMBus pre-probe' >/dev/null; then
+    log 'Patched core module signature not found in kernel log; refusing bind.'
+    exit 1
+fi
+
+for n in $(seq 1 40); do
+    [[ -L $DEV/driver ]] && { log 'Touchscreen attached while waiting.'; exit 0; }
+    state=$(cat "$ACPI/power_state" 2>/dev/null || true)
+    inuse=$(cat "$PTPL/resource_in_use" 2>/dev/null || true)
+    [[ $state == D3cold && $inuse == 0 ]] && break
+    sleep 0.25
+done
+[[ $state == D3cold && $inuse == 0 ]] || {
+    log "Unexpected initial power state $state / PTPL $inuse. No bind attempted."
+    exit 1
+}
+sleep 1
+log 'Retrying touchscreen probe from D3cold without an ACPI overlay.'
+printf '%s\n' i2c-ELAN2513:00 > "$DRIVER/bind"
+[[ -L $DEV/driver ]] || { log 'Touchscreen failed to attach'; exit 1; }
+log 'Touchscreen attached successfully.'

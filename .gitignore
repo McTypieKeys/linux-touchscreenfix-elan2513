@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.ko
+*.o
+*.mod
+*.mod.c
+*.symvers
+*.order
+.tmp_versions/
+*.cmd
+.*.cmd
+*.tar.*
+*.key
+*.priv
+*.der
+*.pem
