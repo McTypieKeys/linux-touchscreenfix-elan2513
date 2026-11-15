@@ -209,6 +209,12 @@ This disables the service, removes the DKMS package, and refreshes installed ini
 
 **Relevant upstream references:** [Linux ACPI non-D0 probing documentation](https://docs.kernel.org/firmware-guide/acpi/non-d0-probe.html), [Ubuntu Secure Boot and MOK documentation](https://documentation.ubuntu.com/security/security-features/platform-protections/secure-boot/), [DKMS](https://github.com/dell/dkms). For proper kernel integration, prefer a narrowly scoped DMI/ACPI quirk and tested power sequencing over a general-purpose bypass or global state mutation. This repository records a **field-validated workaround, not a reviewed root-cause fix**.
 
+## AI assistance and disclaimer
+
+This repository's documentation, shell/Python installation and maintenance scripts, DKMS packaging, ACPI helper module, and source-patching logic were drafted with assistance from **OpenAI ChatGPT (GPT-6)**. The troubleshooting process and the successful touchscreen behavior on the tested laptop were reported and verified by the device owner; the AI did not independently run the software on that machine.
+
+**AI-generated code may contain errors, unsafe assumptions, or incompatibilities.** This is an experimental, hardware-specific workaround—not an official Linux kernel, Ubuntu, HP, or ELAN patch, and not independently audited or approved for upstream inclusion. Users and maintainers should inspect the source, confirm their hardware and kernel version, back up their systems, retain a known-working boot option, and test carefully. In particular, Secure Boot success and DKMS operation on the documented test kernel do **not** guarantee compatibility with later kernel versions. No warranty or fitness for a particular purpose is implied; see the repository license for terms.
+
 ## License and contributions
 
 The helper and automation are provided under **GPL-2.0-only**, matching the kernel module licensing constraints; see [LICENSE](LICENSE). The Ubuntu kernel source code is **not** vendored here; users generate their own patched copies from distribution-provided sources. Issues containing ACPI paths, kernel versions, probe logs and DMI identifiers are useful, but please redact serial numbers, machine keys, personal identifiers and private signing material.
