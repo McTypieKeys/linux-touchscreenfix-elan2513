@@ -10,12 +10,17 @@ printf '\n=== Module paths and signatures ===\n'
 for mod in elan2513_enum i2c_hid i2c_hid_acpi; do
   printf '%s : ' "$mod"
   modinfo -n "$mod" 2>/dev/null || echo not-found
-  printf '  signer: '
-  modinfo -F signer "$mod" 2>/dev/null || true
+  signer=$(modinfo -F signer "$mod" 2>/dev/null || true)
+  if [[ -n $signer ]]; then
+    echo '  signature: present (signer name withheld)'
+  else
+    echo '  signature: absent or unreadable'
+  fi
 done
 printf '\n=== Service ===\n'
 systemctl is-enabled elan2513-dkms.service 2>/dev/null || true
-systemctl --no-pager --full status elan2513-dkms.service 2>/dev/null | head -n 20 || true
+systemctl show elan2513-dkms.service --no-pager \
+  --property=LoadState,ActiveState,SubState,Result,ExecMainStatus 2>/dev/null || true
 printf '\n=== Touchscreen state ===\n'
 for file in /sys/bus/acpi/devices/ELAN2513:00/power_state /sys/bus/acpi/devices/LNXPOWER:06/resource_in_use; do
   [ ! -r "$file" ] || { printf '%s: ' "$file"; cat "$file"; }

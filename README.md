@@ -47,6 +47,12 @@ hid-multitouch ... I2C HID v1.00 Device [ELAN2513:00 2A94:A835]
 - The installation is tested on **Ubuntu Linux 7.0.0-43** only. DKMS attempts automatic rebuilds for later kernels, but internal APIs may change. Do not assume the touchscreen will survive every upgrade without adapting the code.
 - **If this device's actual ACPI path differs, stop.** The path guard is intentionally strict.
 
+## Privacy and safe diagnostic sharing
+
+The **HP model family, kernel version, ACPI namespace path, I²C bus/address, HID vendor/product IDs, and anonymized probe traces** above are included deliberately to help reproduce the bug. They are technical device descriptors, **not** a device serial number, account identifier, or MOK signing key. In combination with a public GitHub profile they may still reveal aspects of an individual's hardware configuration.
+
+**Do not post unredacted command output** to GitHub issues. In particular, `uname -a` and `systemctl status` can display the computer hostname; `journalctl` records often include it; `modinfo -F signer` may reveal a personal or machine-specific certificate name. Before sharing diagnostics, remove hostnames, usernames, personal home paths, UUIDs, serial numbers, network addresses, email addresses, and unrelated logs. Never post `MOK.priv` or any other signing key. The provided `scripts/status.sh` suppresses signer names and avoids service-journal output by default, but **review its output before sharing**. The `.gitignore` reduces accidental commits but does not guarantee privacy if ignored files are forced into Git.
+
 ## Copy-paste installation guide (fresh Kubuntu 26.04)
 
 These steps are intended for a **fresh installation** on the exact tested hardware, not for reinstalling over an already-installed `elan2513-combined/0.1` DKMS package. They do not modify GRUB. Run each numbered section separately and check its output before moving on.
@@ -131,12 +137,12 @@ sudo dkms status
 for module in elan2513_enum i2c_hid i2c_hid_acpi; do
   echo "=== $module ==="
   modinfo -n "$module"
-  modinfo -F signer "$module"
+  test -n "$(modinfo -F signer "$module")" && echo "Signature present (signer redacted)" || echo "UNSIGNED"
 done
 systemctl is-enabled elan2513-dkms.service
 ```
 
-Expect `elan2513-combined/0.1 ... installed`, each path under `/updates/dkms/`, **nonempty signer text** for all three, and `enabled` for the service. `Original modules exist` in DKMS status is normal. If the build fails, inspect `/var/lib/dkms/elan2513-combined/0.1/build/make.log`; see [troubleshooting](docs/TROUBLESHOOTING.md).
+Expect `elan2513-combined/0.1 ... installed`, each path under `/updates/dkms/`, **signature confirmation** for all three, and `enabled` for the service. `Original modules exist` in DKMS status is normal. If the build fails, inspect `/var/lib/dkms/elan2513-combined/0.1/build/make.log`; see [troubleshooting](docs/TROUBLESHOOTING.md).
 
 ### 6. Reboot **normal Kubuntu** and verify physical touch
 
@@ -150,7 +156,7 @@ Do not choose a legacy `elan2513-fixed-*` GRUB entry from earlier experiments. A
 cd "$HOME/linux-touchscreenfix-elan2513"
 bash scripts/status.sh
 sudo dkms status
-sudo journalctl -u elan2513-dkms.service -b --no-pager
+sudo journalctl -u elan2513-dkms.service -b -o cat --no-pager
 ```
 
 Look for `ELAN2513 attached`, libinput `Capabilities: touch`, and a successful service. The tested machine also retained its separate SYNA32EA touchpad. Device recognition alone is insufficient: **confirm physical touches work**.
@@ -161,11 +167,11 @@ Look for `ELAN2513 attached`, libinput `Capabilities: touch`, and a successful s
 mokutil --sb-state
 cat /sys/kernel/security/lockdown
 for module in elan2513_enum i2c_hid i2c_hid_acpi; do
-  modinfo -F signer "$module"
+  test -n "$(modinfo -F signer "$module")" && echo "Signature present (signer redacted)" || echo "UNSIGNED"
 done
 ```
 
-Expect `SecureBoot enabled`, `[integrity]` selected in lockdown state, and a signer for each module. If your firmware still has Secure Boot disabled, enable it in the HP firmware settings and repeat the normal-boot test. Do not enable it before confirming MOK enrollment/signatures.
+Expect `SecureBoot enabled`, `[integrity]` selected in lockdown state, and a signature confirmation for each module. If your firmware still has Secure Boot disabled, enable it in the HP firmware settings and repeat the normal-boot test. Do not enable it before confirming MOK enrollment/signatures.
 
 ## Kernel upgrades and GRUB updates
 

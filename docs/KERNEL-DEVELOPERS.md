@@ -89,13 +89,13 @@ A future fix should avoid shipping `struct acpi_device` field writes via an unre
 ## Reproduce and gather reports
 
 ```bash
-uname -a
+uname -r
 cat /sys/bus/acpi/devices/ELAN2513:00/path
 cat /sys/bus/acpi/devices/ELAN2513:00/power_state
 cat /sys/bus/acpi/devices/LNXPOWER:06/resource_in_use
-sudo journalctl -k -b --no-pager | grep -iE 'ELAN2513|hid.multitouch|HID descriptor' | tail -40
+sudo journalctl -k -b -o cat --no-pager | grep -iE 'ELAN2513|hid.multitouch|HID descriptor' | tail -40
 sudo libinput list-devices | grep -A12 -B2 -i ELAN2513
 sudo dkms status
 ```
 
-Do not post DMI serial numbers, full `dmidecode` outputs without redaction, private signing keys, or privileged device dumps containing unrelated data. Note exact BIOS, kernel, source-package versions, whether this is a replacement panel, and whether touch input physically works.
+Even with `-o cat`, logs can contain device-specific paths and identifiers; review and redact before posting. Do not post DMI serial numbers, full `dmidecode` outputs without redaction, private signing keys, or privileged device dumps containing unrelated data. Note exact BIOS, kernel, source-package versions, whether this is a replacement panel, and whether touch input physically works.

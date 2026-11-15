@@ -2,14 +2,18 @@
 
 This document is for the exact HP Pavilion 15-eg3xxx / ACPI `ELAN2513:00` `\_SB_.PC00.I2C0.TPL1` case documented in the main README. Keep a USB mouse available. The instructions below assume `elan2513-combined/0.1` and normal Kubuntu boot, not the older custom-SSDT GRUB entry.
 
+## Privacy reminder
+
+Do not paste raw `systemctl status`, `uname -a`, or full journal output into a public issue. These may reveal hostnames, users, paths, or unrelated system events. Commands below use `journalctl -o cat` to omit the usual hostname/timestamp prefix, but **review and redact all output before sharing**. Local MOK signer names can contain a computer name; report only whether signatures are present.
+
 ## Confirm installed state
 
 ```bash
 cd "$HOME/linux-touchscreenfix-elan2513"
 bash scripts/status.sh
 sudo dkms status
-sudo journalctl -u elan2513-dkms.service -b --no-pager
-sudo journalctl -k -b --no-pager | grep -iE 'ELAN2513|HID descriptor|module verification|Key was rejected' | tail -60
+sudo journalctl -u elan2513-dkms.service -b -o cat --no-pager
+sudo journalctl -k -b -o cat --no-pager | grep -iE 'ELAN2513|HID descriptor|module verification|Key was rejected' | tail -60
 ```
 
 Expected: three module paths in `updates/dkms`, nonempty `modinfo -F signer`, `ELAN2513 attached`, and libinput `Capabilities: touch`. Confirm **physical touches**, not just the input-device listing.
@@ -50,10 +54,10 @@ The known troubleshooting history includes:
 
 ```bash
 systemctl status elan2513-dkms.service --no-pager
-sudo journalctl -u elan2513-dkms.service -b --no-pager
+sudo journalctl -u elan2513-dkms.service -b -o cat --no-pager
 cat /sys/bus/acpi/devices/ELAN2513:00/power_state
 cat /sys/bus/acpi/devices/LNXPOWER:06/resource_in_use
-sudo journalctl -k -b --no-pager | grep -iE 'ELAN2513|hid.multitouch|HID descriptor' | tail -40
+sudo journalctl -k -b -o cat --no-pager | grep -iE 'ELAN2513|hid.multitouch|HID descriptor' | tail -40
 ```
 
 The startup script is guarded: it refuses to retry if the state isn't `D3cold` with `PTPL` inactive, if the patched driver isn't selected, or if the expected SMBus-bypass trace is missing. **Do not force-bind the device from D0 or while PTPL is active** merely to circumvent these checks.
@@ -73,9 +77,9 @@ mokutil --sb-state
 cat /sys/kernel/security/lockdown
 for m in elan2513_enum i2c_hid i2c_hid_acpi; do
   modinfo -n "$m"
-  modinfo -F signer "$m"
+  test -n "$(modinfo -F signer "$m")" && echo "Signature present (signer redacted)" || echo "UNSIGNED"
 done
-sudo journalctl -k -b --no-pager | grep -iE 'signature|verification|key was rejected|module' | tail -50
+sudo journalctl -k -b -o cat --no-pager | grep -iE 'signature|verification|key was rejected|module' | tail -50
 ```
 
 A nonempty signer field shows that a signature is present, **not** that Secure Boot accepted it. Verify the corresponding certificate is enrolled, that you booted through the normal Ubuntu shim chain, and that physical input works. Never disable signature enforcement or publish a private MOK key as a shortcut.
