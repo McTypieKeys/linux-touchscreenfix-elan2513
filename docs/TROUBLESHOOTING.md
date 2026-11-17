@@ -70,6 +70,30 @@ sudo update-initramfs -u -k "$(uname -r)"
 
 Reboot normally. Do not assume `modinfo -n` on disk proves which module image was already loaded by an earlier initramfs; check boot logs.
 
+## Screen is unresponsive after waking from suspend
+
+On the tested system, the kernel reported `acpi_subsys_resume returns -121` and the touchscreen stayed **bound** but did not respond. ACPI showed **D0 / PTPL=1**. Unbinding only the ELAN2513 transitioned to **D3cold / PTPL=0**; rebinding recovered touch. This observation does not prove the root cause and does not implicate the separate touchpad.
+
+Check whether the new post-resume hook is installed:
+
+```bash
+test -x /usr/lib/systemd/system-sleep/elan2513-dkms-resume && echo installed || echo missing
+sudo journalctl -b -u systemd-suspend.service -o cat --no-pager |
+  grep 'elan2513-dkms-resume:' | tail -n 25
+cat /sys/bus/acpi/devices/ELAN2513:00/power_state
+cat /sys/bus/acpi/devices/LNXPOWER:06/resource_in_use
+```
+
+The script runs after supported suspend events (not before them) and unbinds the ELAN2513 if still attached, then attempts to rebind only after confirming the tested D3cold / PTPL=0 state. It does not interact with user-session services while systemd has frozen them. The device owner confirmed that the automatic hook restored physical touchscreen operation after a real sleep/wake cycle on 2026-11-16. Repeatability across additional cycles and kernel versions remains unverified.
+
+If needed, disable only that hook (leave the verified boot DKMS installation in place):
+
+```bash
+sudo rm -f /usr/lib/systemd/system-sleep/elan2513-dkms-resume
+```
+
+Review log output for hostnames and unrelated identifiers before posting it in a public issue.
+
 ## Secure Boot rejects modules
 
 ```bash

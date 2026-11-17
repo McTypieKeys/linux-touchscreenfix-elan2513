@@ -21,6 +21,12 @@ printf '\n=== Service ===\n'
 systemctl is-enabled elan2513-dkms.service 2>/dev/null || true
 systemctl show elan2513-dkms.service --no-pager \
   --property=LoadState,ActiveState,SubState,Result,ExecMainStatus 2>/dev/null || true
+printf '\n=== Post-resume recovery hook ===\n'
+if [ -x /usr/lib/systemd/system-sleep/elan2513-dkms-resume ]; then
+  echo 'installed (automatic suspend/resume recovery not yet confirmed on every system)'
+else
+  echo 'not installed'
+fi
 printf '\n=== Touchscreen state ===\n'
 for file in /sys/bus/acpi/devices/ELAN2513:00/power_state /sys/bus/acpi/devices/LNXPOWER:06/resource_in_use; do
   [ ! -r "$file" ] || { printf '%s: ' "$file"; cat "$file"; }

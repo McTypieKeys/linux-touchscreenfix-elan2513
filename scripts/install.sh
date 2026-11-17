@@ -15,6 +15,7 @@ MOK_DER=/var/lib/shim-signed/mok/MOK.der
 CONF=/etc/dkms/framework.conf.d/98-elan2513-mok.conf
 SERVICE=/etc/systemd/system/elan2513-dkms.service
 LOADER=/usr/local/sbin/elan2513-dkms-start
+SLEEP_HOOK=/usr/lib/systemd/system-sleep/elan2513-dkms-resume
 KVER=$(uname -r)
 
 for cmd in python3 dkms mokutil modinfo update-initramfs systemctl; do
@@ -38,6 +39,7 @@ printf 'MOK: %s\n' "$mok_result"
 [[ ! -e $DEST ]] || fail "$DEST already exists. Do not overwrite a working DKMS installation."
 [[ ! -e $CONF ]] || fail "$CONF already exists. Review before installing."
 [[ ! -e $SERVICE && ! -e $LOADER ]] || fail 'Service or loader already exists; review before installing.'
+[[ ! -e $SLEEP_HOOK ]] || fail 'Resume hook already exists; review before installing.'
 [[ -d /sys/bus/acpi/devices/ELAN2513:00 ]] || fail 'ELAN2513 ACPI device not found'
 actual=$(cat /sys/bus/acpi/devices/ELAN2513:00/path)
 [[ $actual == '\_SB_.PC00.I2C0.TPL1' ]] || fail "Unsupported touchscreen path $actual"
@@ -70,6 +72,8 @@ for mod in elan2513_enum i2c_hid i2c_hid_acpi; do
 done
 install -m 0755 "$HERE/systemd/elan2513-dkms-start" "$LOADER"
 install -m 0644 "$HERE/systemd/elan2513-dkms.service" "$SERVICE"
+install -d -m 0755 /usr/lib/systemd/system-sleep
+install -m 0755 "$HERE/systemd/elan2513-dkms-resume" "$SLEEP_HOOK"
 systemctl daemon-reload
 systemctl enable elan2513-dkms.service
 update-initramfs -u -k "$KVER"
