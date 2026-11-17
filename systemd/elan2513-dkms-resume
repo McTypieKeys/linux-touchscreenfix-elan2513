@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-only
+# ELAN2513: ACPI/I2C touchscreen resume recovery on the tested HP Pavilion.
+# Called by systemd-sleep after resume. Only the touchscreen is re-bound.
+set -Eeuo pipefail
+
+# systemd runs sleep hooks for both pre and post; never disrupt suspend entry.
+[[ $# -ge 2 ]] || exit 0
+[[ $1 == post ]] || exit 0
+case $2 in
+    suspend|hybrid-sleep|suspend-then-hibernate) ;;
+    *) exit 0 ;;
+esac
+
+log() { printf 'elan2513-dkms-resume: %s\n' "$*"; }
+DEV=/sys/bus/i2c/devices/i2c-ELAN2513:00
+ACPI=/sys/bus/acpi/devices/ELAN2513:00
+PTPL=/sys/bus/acpi/devices/LNXPOWER:06
+DRIVER=/sys/bus/i2c/drivers/i2c_hid_acpi
+ID=i2c-ELAN2513:00
+
+# Never act on the earlier experimental SSDT/GRUB configuration.
+if grep -Fq 'elan2513.fix=1' /proc/cmdline; then
+    log 'Legacy GRUB entry detected; leaving device alone.'
+    exit 0
+fi
+
+[[ $EUID -eq 0 ]] || { log 'Must run as root'; exit 1; }
+[[ -d $DEV && -r $ACPI/path && -r $ACPI/power_state && -r $PTPL/resource_in_use && -d $DRIVER ]] || {
+    log 'Expected ELAN2513 device or ACPI paths missing; skipping.'
+    exit 0
+}
+[[ $(cat "$ACPI/path") == '\_SB_.PC00.I2C0.TPL1' ]] || {
+    log 'Unexpected ACPI path; refusing to modify device.'
+    exit 1
+}
+
+# The existing Secure Boot-compatible DKMS helper must still be active.
+if ! grep -q '^elan2513_enum ' /proc/modules; then
+    log 'Signed enumeration-state helper is not loaded; refusing recovery.'
+    exit 1
+fi
+for module in i2c_hid i2c_hid_acpi; do
+    path=$(modinfo -n "$module" 2>/dev/null || true)
+    if [[ $path != *'/updates/dkms/'* ]]; then
+        log "$module does not resolve to DKMS; refusing recovery."
+        exit 1
+    fi
+done
+
+# Avoid overlapping recoveries. The file is recreated on each boot.
+exec 9>/run/lock/elan2513-dkms-resume.lock
+if ! flock -n 9; then
+    log 'Recovery already running; skipping duplicate invocation.'
+    exit 0
+fi
+
+before_state=$(cat "$ACPI/power_state" 2>/dev/null || true)
+before_ptpl=$(cat "$PTPL/resource_in_use" 2>/dev/null || true)
+log "Resume observed state=$before_state PTPL=$before_ptpl; resetting only $ID."
+
+if [[ -L $DEV/driver ]]; then
+    if [[ $(readlink -f "$DEV/driver") != "$DRIVER" ]]; then
+        log 'Touchscreen is bound to an unexpected driver; refusing unbind.'
+        exit 1
+    fi
+    if ! printf '%s\n' "$ID" > "$DRIVER/unbind"; then
+        log 'Touchscreen unbind failed.'
+        exit 1
+    fi
+fi
+
+# The exact state transition was verified manually after a failed resume.
+state=''
+inuse=''
+for ((i = 0; i < 40; i++)); do
+    state=$(cat "$ACPI/power_state" 2>/dev/null || true)
+    inuse=$(cat "$PTPL/resource_in_use" 2>/dev/null || true)
+    [[ $state == D3cold && $inuse == 0 ]] && break
+    sleep 0.25
+done
+if [[ $state != D3cold || $inuse != 0 ]]; then
+    log "Refusing bind: unexpected state=$state PTPL=$inuse. Reboot normally if needed."
+    exit 1
+fi
+
+sleep 1
+if ! printf '%s\n' "$ID" > "$DRIVER/bind"; then
+    log 'Touchscreen bind failed.'
+    exit 1
+fi
+if [[ ! -L $DEV/driver || $(readlink -f "$DEV/driver") != "$DRIVER" ]]; then
+    log 'Touchscreen did not attach to expected driver.'
+    exit 1
+fi
+log 'Touchscreen reattached after resume (physical touch must be verified).'

@@ -128,7 +128,8 @@ The installer checks the machine path, Linux kernel family, MOK enrollment, and 
 2. Registers **three modules** with DKMS: `elan2513-enum`, `i2c-hid`, `i2c-hid-acpi`.
 3. Builds and MOK-signs all three; keeps the original Ubuntu `.ko` files available to DKMS rollback.
 4. Installs and enables `elan2513-dkms.service`, whose startup script retries the touchscreen probe **only** in the verified `D3cold`/`PTPL=0` state.
-5. Regenerates the **normal** kernel initramfs. No GRUB entry or ACPI table is modified.
+5. Installs an independent systemd **post-resume recovery hook** for suspend, using only the guarded ELAN2513 unbind/rebind sequence. This hook has not yet been tested automatically across sleep/wake cycles on the reported machine.
+6. Regenerates the **normal** kernel initramfs. No GRUB entry or ACPI table is modified.
 
 Check the result **before** rebooting:
 
@@ -173,6 +174,54 @@ done
 
 Expect `SecureBoot enabled`, `[integrity]` selected in lockdown state, and a signature confirmation for each module. If your firmware still has Secure Boot disabled, enable it in the HP firmware settings and repeat the normal-boot test. Do not enable it before confirming MOK enrollment/signatures.
 
+## Suspend/resume recovery (manual recovery confirmed; automatic hook awaits testing)
+
+The initial DKMS solution initializes the touchscreen at boot, but **sleep/resume uncovered an additional problem** on the tested laptop. After waking, the driver remained attached but physical touch stopped responding. The kernel reported:
+
+```text
+i2c_hid_acpi i2c-ELAN2513:00: failed to change power setting.
+i2c_hid_acpi i2c-ELAN2513:00: PM: dpm_run_callback(): acpi_subsys_resume returns -121
+i2c_hid_acpi i2c-ELAN2513:00: PM: failed to resume async: error -121
+```
+
+The failed resume left the ACPI device in **D0** with **PTPL=1**. A controlled touchscreen-only unbind transitioned it to **D3cold / PTPL=0**, and a subsequent bind restored physical touch. The recovery hook at `systemd/elan2513-dkms-resume` automates **that tested sequence** after suspend. It checks the exact ACPI path, loaded helper, DKMS driver paths and binding, and will not rebind unless D3cold / PTPL=0 is reached. It does **not** unload drivers, touch the separate touchpad, patch GRUB, or require new module signatures. It executes after each applicable resume even if the touchscreen might already be working; there can be a short interruption while the device is reattached.
+
+**Fresh installations using the updated installer include this hook automatically.** If the original DKMS fix is **already installed and working**, do not rerun the fresh installer. Instead, install only the hook:
+
+```bash
+# Keep your existing signed DKMS installation and known-working kernel.
+if [ -d "$HOME/linux-touchscreenfix-elan2513/.git" ]; then
+  git -C "$HOME/linux-touchscreenfix-elan2513" fetch origin secureboot-dkms-elan2513-fix
+  git -C "$HOME/linux-touchscreenfix-elan2513" switch secureboot-dkms-elan2513-fix
+  git -C "$HOME/linux-touchscreenfix-elan2513" pull --ff-only
+else
+  git clone --branch secureboot-dkms-elan2513-fix --single-branch \
+    https://github.com/McTypieKeys/linux-touchscreenfix-elan2513.git \
+    "$HOME/linux-touchscreenfix-elan2513"
+fi
+
+sudo install -d -m 0755 /usr/lib/systemd/system-sleep
+sudo install -m 0755 \
+  "$HOME/linux-touchscreenfix-elan2513/systemd/elan2513-dkms-resume" \
+  /usr/lib/systemd/system-sleep/elan2513-dkms-resume
+test -x /usr/lib/systemd/system-sleep/elan2513-dkms-resume && echo "Resume hook installed"
+```
+
+**Test:** Save open documents, keep a USB mouse available, and suspend normally using the desktop's Sleep menu or `systemctl suspend`. Wake the laptop, verify physical taps and drags, and inspect the hook's output:
+
+```bash
+sudo journalctl -b -u systemd-suspend.service -o cat --no-pager |
+  grep 'elan2513-dkms-resume:' | tail -n 25
+```
+
+Success requires both a reattachment message and **physical touch working**. The manual unbind/rebind procedure is verified; **automatic invocation of this new hook has not yet been confirmed on the tested machine**. If the script fails or disrupts sleep, disable only the new hook (the normal boot fix remains intact):
+
+```bash
+sudo rm -f /usr/lib/systemd/system-sleep/elan2513-dkms-resume
+```
+
+The systemd system-sleep mechanism invokes executable hooks after resume, but these hooks are an explicitly experimental integration point; see [systemd-sleep documentation](https://www.freedesktop.org/software/systemd/man/latest/systemd-sleep.html). This is a recovery workaround, **not an upstream root-cause fix**.
+
 ## Kernel upgrades and GRUB updates
 
 **DKMS attempts** to rebuild/sign the three modules for a newly installed kernel when compatible headers are available (`AUTOINSTALL=yes`). It **does not** automatically fetch and adapt newer upstream I²C-HID source code. Our source was validated against `7.0.0-43-generic`; kernel changes may break compilation or behavior.
@@ -206,6 +255,7 @@ This disables the service, removes the DKMS package, and refreshes installed ini
 - [`modules/elan2513-enum.c`](modules/elan2513-enum.c): guarded ACPI enumeration-state helper (no ACPI table override)
 - [`modules/Makefile`](modules/Makefile), [`modules/dkms.conf`](modules/dkms.conf): three-module DKMS build recipe
 - [`systemd/elan2513-dkms-start`](systemd/elan2513-dkms-start): guarded boot-time retry
+- [`systemd/elan2513-dkms-resume`](systemd/elan2513-dkms-resume): guarded post-resume recovery; manual sequence verified, automatic hook pending validation
 
 **Relevant upstream references:** [Linux ACPI non-D0 probing documentation](https://docs.kernel.org/firmware-guide/acpi/non-d0-probe.html), [Ubuntu Secure Boot and MOK documentation](https://documentation.ubuntu.com/security/security-features/platform-protections/secure-boot/), [DKMS](https://github.com/dell/dkms). For proper kernel integration, prefer a narrowly scoped DMI/ACPI quirk and tested power sequencing over a general-purpose bypass or global state mutation. This repository records a **field-validated workaround, not a reviewed root-cause fix**.
 
