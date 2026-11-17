@@ -84,7 +84,7 @@ cat /sys/bus/acpi/devices/ELAN2513:00/power_state
 cat /sys/bus/acpi/devices/LNXPOWER:06/resource_in_use
 ```
 
-The script runs after supported suspend events (not before them) and unbounds the ELAN2513 if still attached, then attempts to rebind only after confirming the tested D3cold / PTPL=0 state. It does not interact with user-session services while systemd has frozen them. The device owner confirmed that the automatic hook restored physical touchscreen operation after a real sleep/wake cycle on 2026-11-16. Repeatability across additional cycles and kernel versions remains unverified.
+The script runs after supported suspend events (not before them) and unbinds the ELAN2513 if still attached, then attempts to rebind only after confirming the tested D3cold / PTPL=0 state. It does not interact with user-session services while systemd has frozen them. The device owner confirmed that the automatic hook restored physical touchscreen operation after a real sleep/wake cycle on 2026-11-16. Repeatability across additional cycles and kernel versions remains unverified.
 
 If needed, disable only that hook (leave the verified boot DKMS installation in place):
 
