@@ -2,7 +2,7 @@
 
 An experimental, **hardware-specific** workaround for an ELAN2513 I²C-HID touchscreen that fails to initialize on an HP Pavilion 15-eg3xxx under Linux. It builds two minimally patched Ubuntu I²C-HID modules and a small ACPI enumeration-state helper using **DKMS**, signs them with an enrolled **Machine Owner Key (MOK)**, and starts a guarded probe retry through systemd. **No custom GRUB entry or ACPI SSDT overlay is required.**
 
-> **Status (15 November 2026):** Confirmed working on one HP Pavilion Laptop 15-eg3xxx, Kubuntu 26.04, Linux `7.0.0-43-generic`, including normal reboots with UEFI Secure Boot **enabled**. The touchscreen and separate SYNA32EA touchpad both enumerate. **Operation following a future kernel update has not yet been verified.** This is not an upstream kernel patch or a general ELAN2513 solution.
+> **Status (15 November 2026):** Confirmed working on one HP Pavilion Laptop 15-eg3xxx, Kubuntu 26.04, Linux `7.0.0-43-generic`, including normal reboots with UEFI Secure Boot **enabled**. The touchscreen and separate SYNA32EA touchpad both enumerate. **Automatic touchscreen recovery after a real suspend/resume was confirmed working on 16 November 2026.** Operation following a future kernel update has not yet been verified. This is not an upstream kernel patch or a general ELAN2513 solution.
 
 ## Tested configuration
 
@@ -128,7 +128,7 @@ The installer checks the machine path, Linux kernel family, MOK enrollment, and 
 2. Registers **three modules** with DKMS: `elan2513-enum`, `i2c-hid`, `i2c-hid-acpi`.
 3. Builds and MOK-signs all three; keeps the original Ubuntu `.ko` files available to DKMS rollback.
 4. Installs and enables `elan2513-dkms.service`, whose startup script retries the touchscreen probe **only** in the verified `D3cold`/`PTPL=0` state.
-5. Installs an independent systemd **post-resume recovery hook** for suspend, using only the guarded ELAN2513 unbind/rebind sequence. This hook has not yet been tested automatically across sleep/wake cycles on the reported machine.
+5. Installs an independent systemd **post-resume recovery hook** for suspend, using only the guarded ELAN2513 unbind/rebind sequence. The device owner confirmed the automatic hook restores working touch after an actual sleep/wake cycle on the tested machine.
 6. Regenerates the **normal** kernel initramfs. No GRUB entry or ACPI table is modified.
 
 Check the result **before** rebooting:
@@ -174,7 +174,7 @@ done
 
 Expect `SecureBoot enabled`, `[integrity]` selected in lockdown state, and a signature confirmation for each module. If your firmware still has Secure Boot disabled, enable it in the HP firmware settings and repeat the normal-boot test. Do not enable it before confirming MOK enrollment/signatures.
 
-## Suspend/resume recovery (manual recovery confirmed; automatic hook awaits testing)
+## Suspend/resume recovery (automatic hook confirmed on tested machine)
 
 The initial DKMS solution initializes the touchscreen at boot, but **sleep/resume uncovered an additional problem** on the tested laptop. After waking, the driver remained attached but physical touch stopped responding. The kernel reported:
 
@@ -214,7 +214,7 @@ sudo journalctl -b -u systemd-suspend.service -o cat --no-pager |
   grep 'elan2513-dkms-resume:' | tail -n 25
 ```
 
-Success requires both a reattachment message and **physical touch working**. The manual unbind/rebind procedure is verified; **automatic invocation of this new hook has not yet been confirmed on the tested machine**. If the script fails or disrupts sleep, disable only the new hook (the normal boot fix remains intact):
+Success requires both a reattachment message and **physical touch working**. The device owner confirmed **physical touch worked again after an actual sleep/wake cycle using the automatic recovery hook** on 16 November 2026. This remains a single-machine validation, not a guarantee for different firmware, panels, or future kernels. If the script fails or disrupts sleep, disable only the new hook (the normal boot fix remains intact):
 
 ```bash
 sudo rm -f /usr/lib/systemd/system-sleep/elan2513-dkms-resume
@@ -255,7 +255,7 @@ This disables the service, removes the DKMS package, and refreshes installed ini
 - [`modules/elan2513-enum.c`](modules/elan2513-enum.c): guarded ACPI enumeration-state helper (no ACPI table override)
 - [`modules/Makefile`](modules/Makefile), [`modules/dkms.conf`](modules/dkms.conf): three-module DKMS build recipe
 - [`systemd/elan2513-dkms-start`](systemd/elan2513-dkms-start): guarded boot-time retry
-- [`systemd/elan2513-dkms-resume`](systemd/elan2513-dkms-resume): guarded post-resume recovery; manual sequence verified, automatic hook pending validation
+- [`systemd/elan2513-dkms-resume`](systemd/elan2513-dkms-resume): guarded post-resume recovery; automatic sleep/wake recovery confirmed on tested machine
 
 **Relevant upstream references:** [Linux ACPI non-D0 probing documentation](https://docs.kernel.org/firmware-guide/acpi/non-d0-probe.html), [Ubuntu Secure Boot and MOK documentation](https://documentation.ubuntu.com/security/security-features/platform-protections/secure-boot/), [DKMS](https://github.com/dell/dkms). For proper kernel integration, prefer a narrowly scoped DMI/ACPI quirk and tested power sequencing over a general-purpose bypass or global state mutation. This repository records a **field-validated workaround, not a reviewed root-cause fix**.
 

@@ -77,7 +77,7 @@ i2c_hid_acpi i2c-ELAN2513:00: PM: failed to resume async: error -121
 
 Despite remaining bound to `i2c_hid_acpi`, the touchscreen stopped responding. After resume the device reported D0 and `PTPL/resource_in_use=1`. Unbinding **only** `i2c-ELAN2513:00` from `/sys/bus/i2c/drivers/i2c_hid_acpi/unbind` caused D3cold and PTPL=0; binding it again through `.../bind` successfully restored HID enumeration **and physical touch**. No I²C-HID modules were unloaded, the independent Synaptics touchpad was left alone, and Secure Boot remained enabled.
 
-The repository now contains `systemd/elan2513-dkms-resume` to perform this **hardware-specific** recovery after resume, with path/module/power guards and a single bind. The *manual operation* was tested; **the automatic sleep hook itself remains to be validated on the actual laptop**.
+The repository now contains `systemd/elan2513-dkms-resume` to perform this **hardware-specific** recovery after resume, with path/module/power guards and a single bind. The manual operation succeeded, and the device owner subsequently confirmed that **the automatic hook restored working physical touch after a real sleep/wake cycle on 2026-11-16**. This validates the hook on this one machine only; reliability across repeated cycles, firmware variants, and future kernels is not established.
 
 This finding warrants upstream attention to ACPI/I²C-HID PM callbacks and the different power-resource states reached after resume, not just initial enumeration. A correct in-kernel solution should handle the faulty power transition without a userspace sysfs rebind or fragile internal ACPI state mutation. **Avoid copying a raw resume log into a public issue without redacting identifying fields.**
 
